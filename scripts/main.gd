@@ -712,7 +712,16 @@ func _click_map(screen_pos: Vector2) -> void:
 			queue_redraw()
 			return
 
+	# Own unit on own city: first click unit, second click same tile opens city production
 	if u and u.owner == GameData.Owner.PLAYER and fog.visible(GameData.Owner.PLAYER, g.x, g.y):
+		if selected == u and not c.is_empty() and c.owner == GameData.Owner.PLAYER:
+			selected = null
+			selected_city = c
+			_rebuild_prod_picker()
+			status_text = "城市生產設定"
+			_update_hud()
+			queue_redraw()
+			return
 		selected = u
 		selected_city = {}
 		_rebuild_prod_picker()
