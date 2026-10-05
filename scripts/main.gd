@@ -1,0 +1,977 @@
+extends Node2D
+## World Conquest — main battle / campaign map controller.
+
+const _PreGameData = preload("res://scripts/game_data.gd")
+const _PreMapGen = preload("res://scripts/map_gen.gd")
+const _PreFog = preload("res://scripts/fog.gd")
+const _PreUnit = preload("res://scripts/unit.gd")
+const _PreCombat = preload("res://scripts/combat.gd")
+const _PreProd = preload("res://scripts/production.gd")
+const _PreAI = preload("res://scripts/ai.gd")
+const _PreCjk = preload("res://scripts/cjk_font.gd")
+
+const FONT_PATH := "res://assets/fonts/NotoSansCJK-Regular.ttc"
+
+var terrain: Array = []
+var cities: Array = []
+var units: Array = []  # WCUnit
+var next_unit_id: int = 1
+var fog: FogSystem
+var rng := RandomNumberGenerator.new()
+var ai := SimpleAI.new()
+
+var turn: int = 1
+var current_owner: int = GameData.Owner.PLAYER
+var selected: WCUnit = null
+var selected_city: Dictionary = {}
+var game_over: bool = false
+var winner: int = -1
+var status_text: String = "選擇單位或城市"
+var combat_log: String = ""
+
+var tile_tex: Dictionary = {}
+var unit_tex: Dictionary = {}
+var city_tex: Dictionary = {}
+var font: Font
+
+var cam: Camera2D
+var map_root: Node2D
+var hud: CanvasLayer
+var minimap_img: Image
+var minimap_tex: ImageTexture
+
+var dragging := false
+var drag_start := Vector2.ZERO
+var cam_start := Vector2.ZERO
+
+func _ready() -> void:
+	rng.randomize()
+	ai.rng = rng
+	_load_assets()
+	_build_scene()
+	_new_game()
+
+func _load_assets() -> void:
+	for name in ["ocean", "grass", "plains", "forest", "hills", "fog", "shroud"]:
+		tile_tex[name] = load("res://assets/tiles/%s.png" % name)
+	for edge in ["N", "S", "E", "W", "NE", "NW", "SE", "SW", "NS", "EW"]:
+		var p := "res://assets/tiles/coast_%s.png" % edge
+		if ResourceLoader.exists(p):
+			tile_tex["coast_" + edge] = load(p)
+	for o in ["neutral", "player", "ai"]:
+		city_tex[o] = load("res://assets/tiles/city_%s.png" % o)
+	for ut in GameData.UNIT_DEFS.keys():
+		var id: String = GameData.UNIT_DEFS[ut]["id"]
+		unit_tex[id] = load("res://assets/units/%s.png" % id)
+		unit_tex[id + "_ai"] = load("res://assets/units/%s_ai.png" % id)
+	# Font face index 3 = Traditional Chinese in Noto Sans CJK TTC
+	font = CjkFont.get_font()
+
+func _build_scene() -> void:
+	map_root = Node2D.new()
+	map_root.name = "MapRoot"
+	add_child(map_root)
+
+	cam = Camera2D.new()
+	cam.name = "Camera"
+	cam.enabled = true
+	cam.zoom = Vector2(1.0, 1.0)
+	add_child(cam)
+
+	hud = CanvasLayer.new()
+	hud.name = "HUD"
+	add_child(hud)
+	_build_hud()
+
+func _build_hud() -> void:
+	var panel := Panel.new()
+	panel.name = "TopBar"
+	panel.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	panel.offset_bottom = 40
+	panel.self_modulate = Color(0.25, 0.2, 0.12, 0.92)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(panel)
+
+	var title := Label.new()
+	title.name = "Title"
+	title.text = "世界征服  World Conquest"
+	title.position = Vector2(12, 8)
+	title.add_theme_font_size_override("font_size", 18)
+	if font:
+		title.add_theme_font_override("font", font)
+	title.add_theme_color_override("font_color", Color(0.95, 0.85, 0.45))
+	hud.add_child(title)
+
+	var turn_lbl := Label.new()
+	turn_lbl.name = "TurnLabel"
+	turn_lbl.position = Vector2(360, 8)
+	turn_lbl.add_theme_font_size_override("font_size", 16)
+	if font:
+		turn_lbl.add_theme_font_override("font", font)
+	turn_lbl.add_theme_color_override("font_color", Color(1, 1, 0.9))
+	hud.add_child(turn_lbl)
+
+	var status := Label.new()
+	status.name = "Status"
+	status.position = Vector2(520, 8)
+	status.size = Vector2(500, 28)
+	status.add_theme_font_size_override("font_size", 14)
+	if font:
+		status.add_theme_font_override("font", font)
+	status.add_theme_color_override("font_color", Color(0.9, 0.9, 0.85))
+	hud.add_child(status)
+
+	var end_btn := Button.new()
+	end_btn.name = "EndTurn"
+	end_btn.text = "結束回合"
+	end_btn.position = Vector2(1140, 6)
+	end_btn.size = Vector2(120, 28)
+	if font:
+		end_btn.add_theme_font_override("font", font)
+		end_btn.add_theme_font_size_override("font_size", 14)
+	if ResourceLoader.exists("res://assets/ui/btn.png"):
+		var bs := StyleBoxTexture.new()
+		bs.texture = load("res://assets/ui/btn.png")
+		bs.texture_margin_left = 6
+		bs.texture_margin_right = 6
+		bs.texture_margin_top = 4
+		bs.texture_margin_bottom = 4
+		end_btn.add_theme_stylebox_override("normal", bs)
+		var bsh := StyleBoxTexture.new()
+		bsh.texture = load("res://assets/ui/btn_hover.png")
+		bsh.texture_margin_left = 6
+		bsh.texture_margin_right = 6
+		bsh.texture_margin_top = 4
+		bsh.texture_margin_bottom = 4
+		end_btn.add_theme_stylebox_override("hover", bsh)
+		end_btn.add_theme_stylebox_override("pressed", bsh)
+	end_btn.pressed.connect(_on_end_turn)
+	hud.add_child(end_btn)
+
+	# Unit card
+	var card := Panel.new()
+	card.name = "UnitCard"
+	card.position = Vector2(8, 520)
+	card.size = Vector2(280, 190)
+	card.self_modulate = Color(0.22, 0.18, 0.1, 0.9)
+	hud.add_child(card)
+
+	var card_lbl := RichTextLabel.new()
+	card_lbl.name = "UnitCardText"
+	card_lbl.position = Vector2(16, 528)
+	card_lbl.size = Vector2(260, 120)
+	card_lbl.bbcode_enabled = true
+	if font:
+		card_lbl.add_theme_font_override("normal_font", font)
+	card_lbl.add_theme_font_size_override("normal_font_size", 14)
+	hud.add_child(card_lbl)
+
+	# Production picker
+	var prod := HBoxContainer.new()
+	prod.name = "ProdPicker"
+	prod.position = Vector2(16, 640)
+	prod.add_theme_constant_override("separation", 6)
+	hud.add_child(prod)
+
+	var prod_hint := Label.new()
+	prod_hint.name = "ProdHint"
+	prod_hint.text = ""
+	prod_hint.position = Vector2(16, 618)
+	prod_hint.add_theme_font_size_override("font_size", 12)
+	if font:
+		prod_hint.add_theme_font_override("font", font)
+	prod_hint.add_theme_color_override("font_color", Color(0.85, 0.8, 0.55))
+	hud.add_child(prod_hint)
+
+	# Minimap
+	var mm_panel := Panel.new()
+	mm_panel.name = "MinimapPanel"
+	mm_panel.position = Vector2(1080, 520)
+	mm_panel.size = Vector2(180, 180)
+	mm_panel.self_modulate = Color(0.15, 0.12, 0.08, 0.95)
+	hud.add_child(mm_panel)
+
+	var mm := TextureRect.new()
+	mm.name = "Minimap"
+	mm.position = Vector2(1090, 530)
+	mm.size = Vector2(160, 160)
+	mm.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	mm.stretch_mode = TextureRect.STRETCH_SCALE
+	hud.add_child(mm)
+
+	minimap_img = Image.create(GameData.MAP_W, GameData.MAP_H, false, Image.FORMAT_RGBA8)
+	minimap_tex = ImageTexture.create_from_image(minimap_img)
+	_hud_ignore_labels()
+
+
+func _hud_ignore_labels() -> void:
+	for n in ["Title", "TurnLabel", "Status", "UnitCard", "UnitCardText", "MinimapPanel", "ProdHint"]:
+		var c: Control = hud.get_node_or_null(n)
+		if c:
+			c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Minimap display ignore; EndTurn/ProdPicker keep STOP
+	var mm: Control = hud.get_node_or_null("Minimap")
+	if mm:
+		mm.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+func _new_game() -> void:
+	var map: Dictionary = MapGen.generate(rng.randi())
+	terrain = map.terrain
+	cities = map.cities
+	units.clear()
+	next_unit_id = 1
+	fog = FogSystem.new()
+	selected = null
+	selected_city = {}
+	game_over = false
+	winner = -1
+	turn = 1
+	current_owner = GameData.Owner.PLAYER
+	status_text = "你的回合 — 點選單位移動，或選擇城市設定生產"
+
+	# Starter armies
+	_spawn_unit(GameData.UnitType.ARMY, GameData.Owner.PLAYER, map.player_start)
+	_spawn_unit(GameData.UnitType.ARMY, GameData.Owner.AI, map.ai_start)
+	# Fighter if port
+	if MapGen.is_port(terrain, map.player_start):
+		_spawn_unit(GameData.UnitType.FIGHTER, GameData.Owner.PLAYER, map.player_start)
+	if MapGen.is_port(terrain, map.ai_start):
+		_spawn_unit(GameData.UnitType.FIGHTER, GameData.Owner.AI, map.ai_start)
+
+	# Default production
+	for c in cities:
+		if c.owner == GameData.Owner.PLAYER or c.owner == GameData.Owner.AI:
+			var port := MapGen.is_port(terrain, c.pos)
+			Production.set_production(c, GameData.UnitType.ARMY, port)
+
+	fog.recompute(GameData.Owner.PLAYER, units, cities)
+	fog.recompute(GameData.Owner.AI, units, cities)
+	# Extra explore ring so opening screenshot shows terrain variety
+	for d in GameData.DIRS8:
+		var p2: Vector2i = map.player_start + d + d
+		if p2.x >= 0 and p2.y >= 0 and p2.x < GameData.MAP_W and p2.y < GameData.MAP_H:
+			if fog.player_fog[p2.y * GameData.MAP_W + p2.x] == 0:
+				fog.player_fog[p2.y * GameData.MAP_W + p2.x] = 1
+
+	var start_iso: Vector2 = GameData.grid_to_iso(map.player_start)
+	cam.position = start_iso
+	cam.zoom = Vector2(1.15, 1.15)
+	queue_redraw()
+	_update_hud()
+	_update_minimap()
+
+func _spawn_unit(type: int, owner: int, pos: Vector2i) -> WCUnit:
+	var u := WCUnit.new(next_unit_id, type, owner, pos)
+	next_unit_id += 1
+	units.append(u)
+	return u
+
+func get_units_of(owner: int) -> Array:
+	var out: Array = []
+	for u in units:
+		if u.alive and u.owner == owner:
+			out.append(u)
+	return out
+
+func terrain_at(p: Vector2i) -> int:
+	if p.x < 0 or p.y < 0 or p.x >= GameData.MAP_W or p.y >= GameData.MAP_H:
+		return GameData.Terrain.OCEAN
+	return terrain[p.y * GameData.MAP_W + p.x]
+
+func city_at(p: Vector2i) -> Dictionary:
+	for c in cities:
+		if c.pos == p:
+			return c
+	return {}
+
+func unit_at(p: Vector2i, ignore_aboard: bool = true) -> WCUnit:
+	for u in units:
+		if not u.alive:
+			continue
+		if ignore_aboard and u.aboard >= 0:
+			continue
+		if u.pos == p:
+			return u
+	return null
+
+func units_at(p: Vector2i) -> Array:
+	var out: Array = []
+	for u in units:
+		if u.alive and u.aboard < 0 and u.pos == p:
+			out.append(u)
+	return out
+
+func can_enter(u: WCUnit, dest: Vector2i) -> bool:
+	if dest.x < 0 or dest.y < 0 or dest.x >= GameData.MAP_W or dest.y >= GameData.MAP_H:
+		return false
+	var t := terrain_at(dest)
+	var domain: String = u.domain()
+	if domain == "land" and not GameData.is_land(t):
+		var carrier = unit_at(dest)
+		if carrier and carrier.owner == u.owner and carrier.can_carry(u):
+			return true
+		return false
+	if domain == "sea" and GameData.is_land(t):
+		return false
+	# stacking: one combat unit except cargo / carrier load
+	var other = unit_at(dest)
+	if other and other.owner == u.owner:
+		if other.can_carry(u):
+			return true
+		return false
+	if other and other.owner != u.owner:
+		return Combat.can_attack(u, other)
+	return true
+
+func find_unit(uid: int) -> WCUnit:
+	for x in units:
+		if x.id == uid:
+			return x
+	return null
+
+func _sync_cargo_positions(ship: WCUnit) -> void:
+	for cid in ship.cargo:
+		var cgo = find_unit(cid)
+		if cgo and cgo.alive:
+			cgo.pos = ship.pos
+
+func try_unload(carrier: WCUnit, dest: Vector2i) -> bool:
+	if not carrier.alive or carrier.cargo.is_empty() or carrier.moves_left <= 0:
+		return false
+	var d: Vector2i = dest - carrier.pos
+	if maxi(absi(d.x), absi(d.y)) != 1:
+		return false
+	var cid: int = carrier.cargo[0]
+	var u = find_unit(cid)
+	if u == null or not u.alive:
+		carrier.cargo.erase(cid)
+		return false
+	# Domain check for unload tile
+	var t := terrain_at(dest)
+	if u.domain() == "land" and not GameData.is_land(t):
+		return false
+	if u.domain() == "sea" and GameData.is_land(t):
+		return false
+	var blocker = unit_at(dest)
+	if blocker != null:
+		return false
+	carrier.cargo.erase(cid)
+	u.aboard = -1
+	u.pos = dest
+	u.moves_left = 0
+	carrier.moves_left -= 1
+	if u.type == GameData.UnitType.FIGHTER:
+		# leaving carrier spends 1 fuel already accounted on next move; keep fuel
+		pass
+	_try_capture(u)
+	_after_move(carrier)
+	status_text = "卸載 %s" % GameData.unit_name(u.type)
+	return true
+
+func try_move_unit(u: WCUnit, dest: Vector2i) -> bool:
+	if not u.alive or u.moves_left <= 0 or u.aboard >= 0:
+		return false
+	# Must be adjacent (1 step)
+	var d: Vector2i = dest - u.pos
+	if maxi(absi(d.x), absi(d.y)) != 1:
+		return false
+
+	var other = unit_at(dest)
+
+	# Coastal bombard: sea capital ships shell land targets without entering
+	if other and other.owner != u.owner and Combat.can_bombard(u, other):
+		if GameData.is_land(terrain_at(dest)) and u.domain() == "sea":
+			var bres: Dictionary = Combat.fight_bombard(u, other, rng)
+			combat_log = "岸轟：%s" % ", ".join(bres.log)
+			if bres.loser != null:
+				_kill_unit(bres.loser)
+			u.moves_left -= 1
+			_after_move(u)
+			return true
+
+	if not can_enter(u, dest):
+		return false
+
+	if other and other.owner == u.owner and other.can_carry(u):
+		other.cargo.append(u.id)
+		u.aboard = other.id
+		u.pos = other.pos
+		u.moves_left -= 1
+		if u.type == GameData.UnitType.FIGHTER:
+			u.fuel = u.def()["fuel"]  # refuel on carrier
+		_after_move(u)
+		return true
+
+	if other and other.owner != u.owner:
+		if not Combat.can_attack(u, other):
+			return false
+		var res: Dictionary = Combat.fight(u, other, rng)
+		combat_log = "戰鬥：%s" % ", ".join(res.log)
+		_kill_unit(res.loser)
+		if not u.alive:
+			u.moves_left = 0
+			_after_move(u)
+			return true
+		u.pos = dest
+		_sync_cargo_positions(u)
+		u.moves_left -= 1
+		if u.type == GameData.UnitType.FIGHTER:
+			u.fuel = maxi(0, u.fuel - 1)
+		_try_capture(u)
+		_after_move(u)
+		return true
+
+	u.pos = dest
+	_sync_cargo_positions(u)
+	u.moves_left -= 1
+	if u.type == GameData.UnitType.FIGHTER:
+		u.fuel = maxi(0, u.fuel - 1)
+	_try_capture(u)
+	_after_move(u)
+	return true
+
+func _try_capture(u: WCUnit) -> void:
+	if not u.can_capture():
+		return
+	var c := city_at(u.pos)
+	if c.is_empty():
+		return
+	if c.owner == u.owner:
+		return
+	# Must clear garrison first
+	for e in units_at(u.pos):
+		if e.owner != u.owner and e.id != u.id:
+			return
+	# Neutral empty or enemy cleared
+	c.owner = u.owner
+	c.progress = 0
+	c.building = GameData.UnitType.ARMY
+	status_text = "佔領城市！(%d,%d)" % [u.pos.x, u.pos.y]
+	_check_win()
+
+func _kill_unit(u: WCUnit) -> void:
+	if u == null:
+		return
+	u.alive = false
+	u.hp = 0
+	# sink cargo
+	for cid in u.cargo:
+		for x in units:
+			if x.id == cid:
+				x.alive = false
+				x.hp = 0
+	u.cargo.clear()
+	# if this was aboard, remove from carrier
+	if u.aboard >= 0:
+		for x in units:
+			if x.id == u.aboard:
+				x.cargo.erase(u.id)
+	if selected == u:
+		selected = null
+
+func _after_move(u: WCUnit) -> void:
+	# Fighter crash check
+	if u.type == GameData.UnitType.FIGHTER and u.alive and u.fuel <= 0:
+		var safe := false
+		var c := city_at(u.pos)
+		if not c.is_empty() and c.owner == u.owner:
+			safe = true
+			u.fuel = u.def()["fuel"]
+		var host = unit_at(u.pos)
+		# already landed handled; if still fuel 0 and not city
+		if not safe:
+			# check if on friendly carrier (aboard)
+			if u.aboard >= 0:
+				safe = true
+				u.fuel = u.def()["fuel"]
+		if not safe and u.fuel <= 0:
+			status_text = "戰鬥機燃油耗盡墜毀！"
+			_kill_unit(u)
+	# Refuel on friendly city
+	if u.type == GameData.UnitType.FIGHTER and u.alive:
+		var c2 := city_at(u.pos)
+		if not c2.is_empty() and c2.owner == u.owner:
+			u.fuel = u.def()["fuel"]
+	fog.recompute(GameData.Owner.PLAYER, units, cities)
+	fog.recompute(GameData.Owner.AI, units, cities)
+	queue_redraw()
+	_update_hud()
+	_update_minimap()
+
+func _check_win() -> void:
+	var player_cities := 0
+	var ai_cities := 0
+	for c in cities:
+		if c.owner == GameData.Owner.PLAYER:
+			player_cities += 1
+		elif c.owner == GameData.Owner.AI:
+			ai_cities += 1
+	if ai_cities == 0 and player_cities > 0:
+		game_over = true
+		winner = GameData.Owner.PLAYER
+		status_text = "勝利！你征服了所有敵方城市！"
+	elif player_cities == 0 and ai_cities > 0:
+		game_over = true
+		winner = GameData.Owner.AI
+		status_text = "敗北… AI 佔領了所有城市。"
+
+func _on_end_turn() -> void:
+	if game_over or current_owner != GameData.Owner.PLAYER:
+		return
+	_end_player_turn()
+
+func _end_player_turn() -> void:
+	_production_phase(GameData.Owner.PLAYER)
+	_fuel_end_check(GameData.Owner.PLAYER)
+	current_owner = GameData.Owner.AI
+	status_text = "AI 思考中…"
+	_update_hud()
+	await get_tree().create_timer(0.15).timeout
+	_ai_turn()
+
+func _ai_turn() -> void:
+	# Reset AI moves
+	for u in units:
+		if u.alive and u.owner == GameData.Owner.AI:
+			u.reset_moves()
+	# Production choices
+	var army_n := 0
+	var tr_n := 0
+	for u in units:
+		if u.alive and u.owner == GameData.Owner.AI:
+			if u.type == GameData.UnitType.ARMY:
+				army_n += 1
+			if u.type == GameData.UnitType.TRANSPORT:
+				tr_n += 1
+	for c in cities:
+		if c.owner == GameData.Owner.AI:
+			ai.choose_production(c, MapGen.is_port(terrain, c.pos), army_n, tr_n)
+	_production_phase(GameData.Owner.AI)
+	ai.plan_moves(self)
+	_fuel_end_check(GameData.Owner.AI)
+	fog.recompute(GameData.Owner.PLAYER, units, cities)
+	fog.recompute(GameData.Owner.AI, units, cities)
+	_check_win()
+	# Back to player
+	turn += 1
+	current_owner = GameData.Owner.PLAYER
+	for u in units:
+		if u.alive and u.owner == GameData.Owner.PLAYER:
+			u.reset_moves()
+	status_text = "第 %d 回合 — 你的行動" % turn
+	queue_redraw()
+	_update_hud()
+	_update_minimap()
+
+func _production_phase(owner: int) -> void:
+	for c in cities:
+		if c.owner != owner:
+			continue
+		var port := MapGen.is_port(terrain, c.pos)
+		var res: Dictionary = Production.tick_city(c, port)
+		if res.has("spawn_type"):
+			var st: int = res.spawn_type
+			# Find free tile to spawn
+			var spawn_pos: Vector2i = c.pos
+			var domain: String = GameData.UNIT_DEFS[st]["domain"]
+			if domain == "sea":
+				spawn_pos = _adjacent_ocean(c.pos)
+				if spawn_pos == Vector2i(-1, -1):
+					continue
+			# stacking check
+			var blocker = unit_at(spawn_pos)
+			if blocker and not (blocker.owner == owner and blocker.can_carry(WCUnit.new(0, st, owner, spawn_pos))):
+				# try neighbors
+				var placed := false
+				for d in GameData.DIRS8:
+					var np: Vector2i = c.pos + d
+					if domain == "sea" and terrain_at(np) != GameData.Terrain.OCEAN:
+						continue
+					if domain == "land" and not GameData.is_land(terrain_at(np)):
+						continue
+					if unit_at(np) == null:
+						spawn_pos = np
+						placed = true
+						break
+				if not placed and blocker:
+					continue
+			_spawn_unit(st, owner, spawn_pos)
+
+func _adjacent_ocean(p: Vector2i) -> Vector2i:
+	for d in GameData.DIRS8:
+		var n: Vector2i = p + d
+		if terrain_at(n) == GameData.Terrain.OCEAN and unit_at(n) == null:
+			return n
+	for d in GameData.DIRS8:
+		var n2: Vector2i = p + d
+		if terrain_at(n2) == GameData.Terrain.OCEAN:
+			return n2
+	return Vector2i(-1, -1)
+
+func _fuel_end_check(owner: int) -> void:
+	for u in units:
+		if not u.alive or u.owner != owner:
+			continue
+		if u.type != GameData.UnitType.FIGHTER:
+			continue
+		var c := city_at(u.pos)
+		if (not c.is_empty() and c.owner == owner) or u.aboard >= 0:
+			u.fuel = u.def()["fuel"]
+		elif u.fuel <= 0:
+			_kill_unit(u)
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed:
+			# Ignore clicks on interactive HUD (end turn / prod buttons)
+			if mb.position.y < 42 and mb.position.x > 1120:
+				return
+			if mb.position.y > 615 and mb.position.x < 720:
+				# production picker zone — let buttons handle
+				return
+			_click_map(mb.position)
+			get_viewport().set_input_as_handled()
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("end_turn"):
+		_on_end_turn()
+		return
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_MIDDLE or mb.button_index == MOUSE_BUTTON_RIGHT:
+			if mb.pressed:
+				dragging = true
+				drag_start = mb.position
+				cam_start = cam.position
+			else:
+				dragging = false
+		elif mb.button_index == MOUSE_BUTTON_WHEEL_UP:
+			cam.zoom = (cam.zoom * 1.1).clamp(Vector2(0.4, 0.4), Vector2(2.5, 2.5))
+		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			cam.zoom = (cam.zoom / 1.1).clamp(Vector2(0.4, 0.4), Vector2(2.5, 2.5))
+	elif event is InputEventMouseMotion and dragging:
+		var mm := event as InputEventMouseMotion
+		cam.position = cam_start - (mm.position - drag_start) / cam.zoom
+
+func _process(delta: float) -> void:
+	var move := Vector2.ZERO
+	if Input.is_action_pressed("camera_up"):
+		move.y -= 1
+	if Input.is_action_pressed("camera_down"):
+		move.y += 1
+	if Input.is_action_pressed("camera_left"):
+		move.x -= 1
+	if Input.is_action_pressed("camera_right"):
+		move.x += 1
+	if move != Vector2.ZERO:
+		cam.position += move.normalized() * 400.0 * delta / cam.zoom.x
+
+func _click_map(screen_pos: Vector2) -> void:
+	if game_over or current_owner != GameData.Owner.PLAYER:
+		return
+	# Ignore HUD top/bottom zones roughly
+	if screen_pos.y < 42 or screen_pos.y > 510 and screen_pos.x < 300:
+		pass
+	var world: Vector2 = cam.get_screen_center_position() + (screen_pos - get_viewport_rect().size / 2.0) / cam.zoom
+	# Adjust for tile center
+	world += Vector2(0, GameData.TILE_H / 4.0)
+	var g: Vector2i = GameData.iso_to_grid(world)
+	if g.x < 0 or g.y < 0 or g.x >= GameData.MAP_W or g.y >= GameData.MAP_H:
+		return
+	if not fog.explored(GameData.Owner.PLAYER, g.x, g.y):
+		status_text = "未探索區域"
+		_update_hud()
+		return
+
+	var u = unit_at(g)
+	var c := city_at(g)
+
+	if selected and selected.alive and selected.owner == GameData.Owner.PLAYER and selected.moves_left > 0:
+		if u == selected:
+			selected = null
+			_update_hud()
+			queue_redraw()
+			return
+		# Unload cargo onto adjacent empty tile
+		if selected.cargo.size() > 0 and try_unload(selected, g):
+			_update_hud()
+			queue_redraw()
+			return
+		# try move / attack / bombard
+		if try_move_unit(selected, g):
+			_update_hud()
+			queue_redraw()
+			return
+		# if click own other unit, reselect
+		if u and u.owner == GameData.Owner.PLAYER:
+			selected = u
+			selected_city = {}
+			_rebuild_prod_picker()
+			_update_hud()
+			queue_redraw()
+			return
+
+	if u and u.owner == GameData.Owner.PLAYER and fog.visible(GameData.Owner.PLAYER, g.x, g.y):
+		selected = u
+		selected_city = {}
+		_rebuild_prod_picker()
+		status_text = "已選擇 %s" % GameData.unit_name(u.type)
+		_update_hud()
+		queue_redraw()
+		return
+
+	if not c.is_empty() and c.owner == GameData.Owner.PLAYER:
+		selected = null
+		selected_city = c
+		_rebuild_prod_picker()
+		status_text = "城市生產設定"
+		_update_hud()
+		queue_redraw()
+		return
+
+	selected = null
+	selected_city = {}
+	_rebuild_prod_picker()
+	_update_hud()
+	queue_redraw()
+
+func _rebuild_prod_picker() -> void:
+	var prod: HBoxContainer = hud.get_node("ProdPicker")
+	for ch in prod.get_children():
+		ch.queue_free()
+	var hint: Label = hud.get_node_or_null("ProdHint")
+	if selected_city.is_empty():
+		if hint:
+			hint.text = ""
+		return
+	if hint:
+		hint.text = "城市生產（點選單位）："
+	var port := MapGen.is_port(terrain, selected_city.pos)
+	for t in Production.available_types(port):
+		var id: String = GameData.UNIT_DEFS[t]["id"]
+		var vbox := VBoxContainer.new()
+		vbox.add_theme_constant_override("separation", 2)
+		var icon_path := "res://assets/ui/prod_%s.png" % id
+		var btn := Button.new()
+		btn.text = GameData.UNIT_DEFS[t]["name_zh"]
+		btn.tooltip_text = "%s 成本 %d" % [GameData.UNIT_DEFS[t]["name_zh"], GameData.UNIT_DEFS[t]["cost"]]
+		btn.custom_minimum_size = Vector2(84, 52)
+		if font:
+			btn.add_theme_font_override("font", font)
+			btn.add_theme_font_size_override("font_size", 12)
+		if ResourceLoader.exists(icon_path):
+			var tex: Texture2D = load(icon_path)
+			btn.icon = tex
+			btn.expand_icon = true
+		var captured_t := t
+		btn.pressed.connect(func():
+			Production.set_production(selected_city, captured_t, port)
+			status_text = "開始生產 %s" % GameData.unit_name(captured_t)
+			_update_hud()
+		)
+		# highlight current
+		if selected_city.building == t:
+			btn.modulate = Color(1.15, 1.05, 0.7)
+		prod.add_child(btn)
+
+func _update_hud() -> void:
+	var turn_lbl: Label = hud.get_node("TurnLabel")
+	turn_lbl.text = "回合 %d" % turn
+	var status: Label = hud.get_node("Status")
+	status.text = status_text
+	if combat_log != "":
+		status.text += " | " + combat_log
+	var card: RichTextLabel = hud.get_node("UnitCardText")
+	if selected and selected.alive:
+		var d: Dictionary = selected.def()
+		var fuel_s := ""
+		if selected.type == GameData.UnitType.FIGHTER:
+			fuel_s = "\n燃油：%d/%d" % [selected.fuel, d["fuel"]]
+		var cargo_s := ""
+		if selected.cargo.size() > 0:
+			var names: Array[String] = []
+			for cid in selected.cargo:
+				var cu = find_unit(cid)
+				if cu and cu.alive:
+					names.append(GameData.unit_name(cu.type))
+			cargo_s = "\n載貨：%s（點鄰格卸載）" % "/".join(names)
+		card.text = "[b]%s[/b]\n移動：%d/%d\n攻擊 %d / 防禦 %d / HP %d%s%s\n位置 (%d,%d)" % [
+			d["name_zh"], selected.moves_left, d["move"], d["attack"], d["defense"], selected.hp,
+			fuel_s, cargo_s, selected.pos.x, selected.pos.y
+		]
+	elif not selected_city.is_empty():
+		var bname := "（無）"
+		if selected_city.building >= 0:
+			bname = GameData.unit_name(selected_city.building)
+		var cost := 0
+		if selected_city.building >= 0:
+			cost = GameData.UNIT_DEFS[selected_city.building]["cost"]
+		var port_s := "港口" if MapGen.is_port(terrain, selected_city.pos) else "內陸"
+		card.text = "[b]城市[/b] %s\n生產：%s (%d/%d)\n位置 (%d,%d)" % [
+			port_s, bname, selected_city.progress, cost, selected_city.pos.x, selected_city.pos.y
+		]
+	else:
+		card.text = "點選己方單位或城市\nWASD / 右鍵拖曳移動視角\n滾輪縮放 · Enter 結束回合"
+
+func _update_minimap() -> void:
+	for y in GameData.MAP_H:
+		for x in GameData.MAP_W:
+			var col := Color(0, 0, 0, 1)
+			if fog.explored(GameData.Owner.PLAYER, x, y):
+				if terrain_at(Vector2i(x, y)) == GameData.Terrain.OCEAN:
+					col = Color(0.15, 0.3, 0.55)
+				else:
+					col = Color(0.3, 0.55, 0.25)
+			minimap_img.set_pixel(x, y, col)
+	for c in cities:
+		if fog.explored(GameData.Owner.PLAYER, c.pos.x, c.pos.y):
+			var cc := Color(0.7, 0.7, 0.7)
+			if c.owner == GameData.Owner.PLAYER:
+				cc = Color(0.3, 0.5, 1.0)
+			elif c.owner == GameData.Owner.AI:
+				cc = Color(1.0, 0.25, 0.25)
+			for ox in range(-1, 2):
+				for oy in range(-1, 2):
+					var mx: int = c.pos.x + ox
+					var my: int = c.pos.y + oy
+					if mx >= 0 and my >= 0 and mx < GameData.MAP_W and my < GameData.MAP_H:
+						minimap_img.set_pixel(mx, my, cc)
+	for u in units:
+		if not u.alive or u.aboard >= 0:
+			continue
+		if not fog.visible(GameData.Owner.PLAYER, u.pos.x, u.pos.y) and u.owner != GameData.Owner.PLAYER:
+			continue
+		if not fog.explored(GameData.Owner.PLAYER, u.pos.x, u.pos.y):
+			continue
+		var uc := Color(0.95, 0.95, 0.2) if u.owner == GameData.Owner.PLAYER else Color(1.0, 0.45, 0.1)
+		minimap_img.set_pixel(u.pos.x, u.pos.y, uc)
+	minimap_tex = ImageTexture.create_from_image(minimap_img)
+	var mm: TextureRect = hud.get_node("Minimap")
+	mm.texture = minimap_tex
+
+func _draw() -> void:
+	# Draw all tiles in iso order (back to front = x+y ascending)
+	var order: Array[Vector2i] = []
+	for y in GameData.MAP_H:
+		for x in GameData.MAP_W:
+			order.append(Vector2i(x, y))
+	order.sort_custom(func(a, b): return (a.x + a.y) < (b.x + b.y))
+
+	for g in order:
+		var fog_v: int = fog.player_fog[g.y * GameData.MAP_W + g.x]
+		var iso: Vector2 = GameData.grid_to_iso(g)
+		if fog_v == 0:
+			if tile_tex.has("fog"):
+				draw_texture(tile_tex["fog"], iso - Vector2(GameData.TILE_W / 2.0, 0))
+			continue
+		var t: int = terrain_at(g)
+		var tex: Texture2D = tile_tex["ocean"]
+		if t == GameData.Terrain.OCEAN:
+			var mask := MapGen.coast_mask(terrain, g.x, g.y)
+			if mask != "" and tile_tex.has("coast_" + mask):
+				tex = tile_tex["coast_" + mask]
+			else:
+				tex = tile_tex["ocean"]
+		elif t == GameData.Terrain.GRASS:
+			tex = tile_tex["grass"]
+		elif t == GameData.Terrain.PLAINS:
+			tex = tile_tex["plains"]
+		elif t == GameData.Terrain.FOREST:
+			tex = tile_tex["forest"]
+		elif t == GameData.Terrain.HILLS:
+			tex = tile_tex["hills"]
+		draw_texture(tex, iso - Vector2(GameData.TILE_W / 2.0, 0))
+		if fog_v == 1 and tile_tex.has("shroud"):
+			draw_texture(tile_tex["shroud"], iso - Vector2(GameData.TILE_W / 2.0, 0))
+
+	# Cities
+	for c in cities:
+		var fog_v2: int = fog.player_fog[c.pos.y * GameData.MAP_W + c.pos.x]
+		if fog_v2 == 0:
+			continue
+		var key := "neutral"
+		if c.owner == GameData.Owner.PLAYER:
+			key = "player"
+		elif c.owner == GameData.Owner.AI:
+			key = "ai"
+		var iso2: Vector2 = GameData.grid_to_iso(c.pos)
+		draw_texture(city_tex[key], iso2 - Vector2(24, 28))
+
+	# Units
+	for u in units:
+		if not u.alive or u.aboard >= 0:
+			continue
+		var fog_v3: int = fog.player_fog[u.pos.y * GameData.MAP_W + u.pos.x]
+		if fog_v3 < 2 and u.owner != GameData.Owner.PLAYER:
+			# subs invisible unless adjacent destroyer
+			if u.is_sub():
+				var seen := false
+				for d in GameData.DIRS8:
+					var n: Vector2i = u.pos + d
+					var ou = unit_at(n)
+					if ou and ou.owner == GameData.Owner.PLAYER and ou.is_destroyer():
+						seen = true
+						break
+					if fog.visible(GameData.Owner.PLAYER, u.pos.x, u.pos.y):
+						# still hidden unless destroyer adjacent
+						pass
+				if not seen:
+					continue
+			elif fog_v3 < 2:
+				continue
+		elif fog_v3 == 0:
+			continue
+		elif fog_v3 < 2 and u.owner != GameData.Owner.PLAYER:
+			continue
+		# sub special: even if visible fog, hide unless adj destroyer or own
+		if u.is_sub() and u.owner != GameData.Owner.PLAYER:
+			var revealed := false
+			for d2 in GameData.DIRS8:
+				var n2: Vector2i = u.pos + d2
+				var ou2 = unit_at(n2)
+				if ou2 and ou2.owner == GameData.Owner.PLAYER and ou2.is_destroyer():
+					revealed = true
+					break
+			if not revealed and not fog.visible(GameData.Owner.PLAYER, u.pos.x, u.pos.y):
+				continue
+			if not revealed:
+				# rule: invisible unless adjacent destroyer
+				continue
+
+		var id: String = u.def()["id"]
+		if u.owner == GameData.Owner.AI:
+			id += "_ai"
+		var texu: Texture2D = unit_tex[id]
+		var iso3: Vector2 = GameData.grid_to_iso(u.pos)
+		var off := Vector2(texu.get_width() / 2.0, texu.get_height() - 4)
+		draw_texture(texu, iso3 - off)
+		if u == selected:
+			draw_arc(iso3 + Vector2(0, 4), 14, 0, TAU, 24, Color(1, 0.9, 0.2, 0.9), 2.0)
+
+	# Move / unload / bombard highlights
+	if selected and selected.alive and selected.moves_left > 0 and selected.owner == GameData.Owner.PLAYER:
+		for d in GameData.DIRS8:
+			var np: Vector2i = selected.pos + d
+			var iso4: Vector2 = GameData.grid_to_iso(np)
+			var col := Color(1, 1, 0.3, 0.55)
+			var show := false
+			if can_enter(selected, np):
+				show = true
+			else:
+				var ot = unit_at(np)
+				if ot and ot.owner != selected.owner and Combat.can_bombard(selected, ot) and GameData.is_land(terrain_at(np)):
+					show = true
+					col = Color(1.0, 0.35, 0.2, 0.65)
+			if selected.cargo.size() > 0:
+				var t := terrain_at(np)
+				var first = find_unit(selected.cargo[0]) if selected.cargo.size() > 0 else null
+				if first and unit_at(np) == null:
+					if first.domain() == "land" and GameData.is_land(t):
+						show = true
+						col = Color(0.4, 0.9, 1.0, 0.65)
+					elif first.domain() == "air":
+						show = true
+						col = Color(0.4, 0.9, 1.0, 0.65)
+			if show:
+				draw_circle(iso4 + Vector2(0, GameData.TILE_H / 4.0), 5, col)
