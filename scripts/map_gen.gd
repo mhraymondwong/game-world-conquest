@@ -116,8 +116,22 @@ static func coast_mask(terrain: Array, x: int, y: int) -> String:
 		m += "N"
 	if y < H - 1 and GameData.is_land(terrain[_idx(x, y + 1)]):
 		m += "S"
-	if x > 0 and GameData.is_land(terrain[_idx(x - 1, y)]):
-		m += "W"
 	if x < W - 1 and GameData.is_land(terrain[_idx(x + 1, y)]):
 		m += "E"
+	if x > 0 and GameData.is_land(terrain[_idx(x - 1, y)]):
+		m += "W"
+	# Approximate rare 3–4-edge coasts with closest 2-edge tile
+	if m in ["NSE", "NSW", "NEW", "SEW", "NSEW"]:
+		if "N" in m and "S" in m:
+			return "NS"
+		if "E" in m and "W" in m:
+			return "EW"
+		if "N" in m and "E" in m:
+			return "NE"
+		if "N" in m and "W" in m:
+			return "NW"
+		if "S" in m and "E" in m:
+			return "SE"
+		if "S" in m and "W" in m:
+			return "SW"
 	return m

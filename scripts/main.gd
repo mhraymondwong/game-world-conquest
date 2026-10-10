@@ -246,12 +246,15 @@ func _new_game() -> void:
 
 	fog.recompute(GameData.Owner.PLAYER, units, cities)
 	fog.recompute(GameData.Owner.AI, units, cities)
-	# Extra explore ring so opening screenshot shows terrain variety
-	for d in GameData.DIRS8:
-		var p2: Vector2i = map.player_start + d + d
-		if p2.x >= 0 and p2.y >= 0 and p2.x < GameData.MAP_W and p2.y < GameData.MAP_H:
-			if fog.player_fog[p2.y * GameData.MAP_W + p2.x] == 0:
-				fog.player_fog[p2.y * GameData.MAP_W + p2.x] = 1
+	# Extra explore so opening view shows terrain variety (ocean/coast/land)
+	for dy in range(-6, 7):
+		for dx in range(-6, 7):
+			var p2: Vector2i = map.player_start + Vector2i(dx, dy)
+			if p2.x < 0 or p2.y < 0 or p2.x >= GameData.MAP_W or p2.y >= GameData.MAP_H:
+				continue
+			var idx: int = p2.y * GameData.MAP_W + p2.x
+			if fog.player_fog[idx] == 0:
+				fog.player_fog[idx] = 1 if abs(dx) + abs(dy) > 3 else 2
 
 	var start_iso: Vector2 = GameData.grid_to_iso(map.player_start)
 	cam.position = start_iso
