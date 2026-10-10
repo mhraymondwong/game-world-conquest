@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>世界征服 World Conquest — 遊戲說明</title>
+<style>
+  :root {
+    --bg: #12100c;
+    --bg2: #1c1710;
+    --panel: #2a2216;
+    --panel2: #342a1c;
+    --brass: #c8a848;
+    --brass-lit: #e8d090;
+    --brass-dk: #8a7028;
+    --text: #e8e0d0;
+    --muted: #a89878;
+    --ocean: #285ab0;
+    --ok: #6aab4a;
+    --danger: #c04040;
+    --border: rgba(200, 168, 72, 0.45);
+    --radius: 10px;
+    --font: "Noto Serif CJK TC", "Noto Sans CJK TC", "Source Han Serif TC",
+            "PingFang TC", "Microsoft JhengHei", "Segoe UI", serif;
+    --mono: "Noto Sans Mono CJK TC", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: var(--font);
+    background:
+      radial-gradient(ellipse at 20% 0%, #1e2838 0%, transparent 50%),
+      radial-gradient(ellipse at 90% 20%, #1a2410 0%, transparent 40%),
+      var(--bg);
+    color: var(--text);
+    line-height: 1.65;
+    font-size: 17px;
+  }
+  a { color: var(--brass-lit); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px 64px; }
+
+  /* Banner */
+  .banner-wrap {
+    margin: 0 -20px 28px;
+    position: relative;
+    border-bottom: 2px solid var(--brass);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  .banner-wrap img {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #0a1020;
+  }
+
+  header.site {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 28px;
+  }
+  header.site h1 {
+    margin: 0;
+    font-size: 1.65rem;
+    color: var(--brass-lit);
+    letter-spacing: 0.04em;
+  }
+  header.site .en {
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin-left: 10px;
+    font-weight: 400;
+  }
+  nav.toc {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    font-size: 0.92rem;
+  }
+  nav.toc a {
+    color: var(--muted);
+    padding: 2px 0;
+    border-bottom: 1px solid transparent;
+  }
+  nav.toc a:hover { color: var(--brass-lit); border-bottom-color: var(--brass-dk); text-decoration: none; }
+
+  section {
+    background: linear-gradient(180deg, var(--panel) 0%, var(--bg2) 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px 26px 26px;
+    margin-bottom: 22px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.35);
+  }
+  section h2 {
+    margin: 0 0 14px;
+    font-size: 1.35rem;
+    color: var(--brass);
+    border-bottom: 1px solid var(--brass-dk);
+    padding-bottom: 8px;
+    letter-spacing: 0.06em;
+  }
+  section h3 {
+    margin: 18px 0 8px;
+    font-size: 1.08rem;
+    color: var(--brass-lit);
+  }
+  p { margin: 0 0 12px; }
+  ul, ol { margin: 0 0 12px; padding-left: 1.35em; }
+  li { margin-bottom: 6px; }
+  code, .path {
+    font-family: var(--mono);
+    background: rgba(0,0,0,0.35);
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 0.88em;
+    color: var(--brass-lit);
+  }
+  pre {
+    background: #0c0a08;
+    border: 1px solid var(--brass-dk);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 0.86rem;
+    color: #d8d0b8;
+    line-height: 1.5;
+  }
+
+  .shot-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin: 14px 0 4px;
+  }
+  @media (max-width: 700px) {
+    .shot-grid { grid-template-columns: 1fr; }
+  }
+  figure {
+    margin: 0;
+    background: #0a0a0c;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  figure img {
+    display: block;
+    width: 100%;
+    height: auto;
+    image-rendering: auto;
+  }
+  figure.pixel img { image-rendering: pixelated; image-rendering: crisp-edges; }
+  figcaption {
+    padding: 8px 12px;
+    font-size: 0.86rem;
+    color: var(--muted);
+    border-top: 1px solid rgba(200,168,72,0.2);
+  }
+
+  table.units {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 4px;
+    font-size: 0.95rem;
+  }
+  table.units th, table.units td {
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+    text-align: left;
+    vertical-align: middle;
+  }
+  table.units th {
+    background: var(--panel2);
+    color: var(--brass);
+    font-weight: 600;
+  }
+  table.units tr:nth-child(even) td { background: rgba(0,0,0,0.18); }
+  table.units img {
+    width: auto;
+    height: 40px;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    vertical-align: middle;
+    background: #1a140e;
+    border-radius: 4px;
+  }
+  .badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    border: 1px solid var(--border);
+    color: var(--brass-lit);
+    background: rgba(200,168,72,0.12);
+  }
+  .badge.land { border-color: #6aab4a; color: #9ed87a; }
+  .badge.air { border-color: #6a9ad0; color: #a0c8f0; }
+  .badge.sea { border-color: #4878c0; color: #88b0e8; }
+
+  .keys {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 8px 16px;
+    margin: 10px 0;
+  }
+  .keys .k {
+    font-family: var(--mono);
+    color: var(--brass-lit);
+    background: rgba(0,0,0,0.35);
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--brass-dk);
+    text-align: center;
+    font-size: 0.85rem;
+  }
+  .callout {
+    border-left: 3px solid var(--brass);
+    background: rgba(200,168,72,0.08);
+    padding: 10px 14px;
+    margin: 12px 0;
+    border-radius: 0 8px 8px 0;
+    color: var(--muted);
+  }
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.88rem;
+    padding: 24px 0 8px;
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="banner-wrap">
+      <img src="images/banner_16x9.png" alt="世界征服 World Conquest 海報 Banner" width="1920" height="1080" />
+    </div>
+
+    <header class="site">
+      <h1>世界征服<span class="en">World Conquest</span></h1>
+      <nav class="toc" aria-label="目錄">
+        <a href="#intro">簡介</a>
+        <a href="#launch">如何開啟</a>
+        <a href="#controls">畫面操作</a>
+        <a href="#rules">規則摘要</a>
+        <a href="#units">七種單位</a>
+        <a href="#victory">勝利條件</a>
+        <a href="#copyright">版權聲明</a>
+      </nav>
+    </header>
+
+    <section id="intro">
+      <h2>簡介</h2>
+      <p>
+        《世界征服》（World Conquest）是一款<strong>原創</strong>回合制等距菱形格 4X 小遊戲，
+        以 Godot 4 製作。玩法靈感來自經典的戰略征服類遊戲：探索群島、佔領城市、生產陸海空軍，
+        並在戰爭迷霧下與電腦對手爭奪世界。
+      </p>
+      <p>
+        畫面採用 1990 年代等距策略遊戲常見的菱形格與像素感調色（草地綠、海洋藍、有序抖色），
+        全部美術以程式生成，<strong>並非</strong> Civilization II 或 Strategic Conquest 的複刻或素材重製。
+      </p>
+      <div class="shot-grid">
+        <figure>
+          <img src="images/shot_map.png" alt="遊戲地圖畫面" />
+          <figcaption>等距群島地圖與戰爭迷霧</figcaption>
+        </figure>
+        <figure>
+          <img src="images/shot_variety.png" alt="地形與單位多樣性" />
+          <figcaption>草原、平原、森林、丘陵與單位</figcaption>
+        </figure>
+      </div>
+      <figure class="pixel" style="margin-top:14px;">
+        <img src="images/preview_tiles.png" alt="地形圖塊預覽" style="width:auto;max-width:100%;margin:12px auto;image-rendering:pixelated;" />
+        <figcaption>原創地形圖塊（海洋／草原／平原／森林／丘陵／城市／戰霧）</figcaption>
+      </figure>
+    </section>
+
+    <section id="launch">
+      <h2>如何開啟</h2>
+      <p>專案路徑：</p>
+      <pre>/workspace/agents/Game Designer/world-conquest</pre>
+      <p>在終端機執行：</p>
+      <pre>cd "/workspace/agents/Game Designer/world-conquest"
+/home/box/bin/godot --path .</pre>
+      <p>也可從 <strong>我的電腦</strong>（Grok Bot 側欄 Computer）開啟已在跑的 Godot 視窗。</p>
+      <div class="callout">
+        無頭煙霧測試（開發用）：
+        <pre style="margin:8px 0 0;">/home/box/bin/godot --headless --path . --script res://scripts/smoke_test.gd</pre>
+      </div>
+    </section>
+
+    <section id="controls">
+      <h2>畫面操作</h2>
+      <div class="keys">
+        <div class="k">滑鼠左鍵</div>
+        <div>選擇己方單位／城市；已選單位時點相鄰格移動或攻擊</div>
+        <div class="k">右鍵／中鍵拖曳</div>
+        <div>平移視角</div>
+        <div class="k">滾輪</div>
+        <div>縮放地圖</div>
+        <div class="k">W A S D</div>
+        <div>移動視角</div>
+        <div class="k">Enter／結束回合</div>
+        <div>結束玩家回合，電腦自動行動</div>
+        <div class="k">城市生產</div>
+        <div>選中己方有駐軍／己方城市後，用下方按鈕選擇生產項目</div>
+      </div>
+      <div class="shot-grid" style="margin-top:16px;">
+        <figure>
+          <img src="images/shot_unit.png" alt="選中單位" />
+          <figcaption>選中單位時顯示可走格</figcaption>
+        </figure>
+        <figure>
+          <img src="images/shot_coast.png" alt="海岸與海軍" />
+          <figcaption>海岸線與海軍單位</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="rules">
+      <h2>規則摘要</h2>
+
+      <h3>地圖</h3>
+      <ul>
+        <li>預設 <strong>40×40</strong> 方格邏輯地圖，隨機群島（陸地／海洋）。</li>
+        <li>城市散佈於陸地；鄰接海洋的城市為<strong>港口</strong>（可生產海軍）。</li>
+        <li>移動為八方向，斜向也只消耗 1 點移動力。</li>
+      </ul>
+
+      <h3>戰爭迷霧（戰霧）</h3>
+      <ul>
+        <li><strong>未探索</strong>：全黑（迷霧／遮罩）。</li>
+        <li><strong>已探索</strong>：可見地形，但不見當下敵軍（除非在視野內）。</li>
+        <li><strong>即時視野</strong>：地面／海軍約 1 格（3×3）；戰鬥機視野 2 格。</li>
+      </ul>
+
+      <h3>城市與生產</h3>
+      <ul>
+        <li>顏色：中立灰、玩家藍綠、電腦紅。</li>
+        <li>每回合生產 +1，達成本即產出選定單位。</li>
+        <li>內陸城僅能造陸＋空；港口可造海軍。</li>
+        <li>佔領需<strong>陸軍</strong>，並先清除駐軍；空中立城可直接走入。新佔領會重置生產進度。</li>
+      </ul>
+
+      <h3>戰鬥</h3>
+      <ul>
+        <li>移入敵方格即依攻／防亂數互擊，直到一方陣亡；勝者留在該格。</li>
+        <li>戰艦／驅逐艦可對鄰接陸上部隊<strong>岸轟</strong>（不進入陸格）。</li>
+        <li>潛艦：非鄰接驅逐艦時隱形；對戰艦有優勢。驅逐艦可發現／克制潛艦。</li>
+      </ul>
+
+      <h3>燃油</h3>
+      <ul>
+        <li>戰鬥機每移動消耗 1 燃油；燃油歸零且不在友方城市／航母上則<strong>墜毀</strong>。</li>
+        <li>降落於友方城市或航母可補油。</li>
+      </ul>
+
+      <h3>堆疊與裝載</h3>
+      <ul>
+        <li>每格原則上一個戰鬥單位（載具另計）。</li>
+        <li>運輸艦可載最多 4 陸軍；航母可載最多 4 戰鬥機並為其補油。</li>
+        <li>選中載具後，點鄰格可卸載。</li>
+      </ul>
+    </section>
+
+    <section id="units">
+      <h2>七種單位</h2>
+      <p>開局各方通常 1 城＋1 陸軍；若起始城為港口則額外 1 戰鬥機。對手為一台簡易擴張型 AI。</p>
+      <table class="units">
+        <thead>
+          <tr>
+            <th>圖示</th>
+            <th>單位</th>
+            <th>類型</th>
+            <th>成本</th>
+            <th>移動</th>
+            <th>備註</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><img src="images/unit_army.png" alt="陸軍" /></td>
+            <td>陸軍</td>
+            <td><span class="badge land">陸</span></td>
+            <td>5</td>
+            <td>1</td>
+            <td>唯一可佔領城市；可上運輸艦</td>
+          </tr>
+          <tr>
+            <td><img src="images/unit_fighter.png" alt="戰鬥機" /></td>
+            <td>戰鬥機</td>
+            <td><span class="badge air">空</span></td>
+            <td>6</td>
+            <td>20 燃油</td>
+            <td>視野 2；需補油否則墜毀</td>
+          </tr>
+          <tr>
+            <td><img src="images/unit_destroyer.png" alt="驅逐艦" /></td>
+            <td>驅逐艦</td>
+            <td><span class="badge sea">海</span></td>
+            <td>8</td>
+            <td>4</td>
+            <td>可發現／克制潛艦；可岸轟</td>
+          </tr>
+          <tr>
+            <td><img src="images/unit_submarine.png" alt="潛艦" /></td>
+            <td>潛艦</td>
+            <td><span class="badge sea">海</span></td>
+            <td>10</td>
+            <td>3</td>
+            <td>非鄰接驅逐則隱形；剋戰艦</td>
+          </tr>
+          <tr>
+            <td><img src="images/unit_transport.png" alt="運輸艦" /></td>
+            <td>運輸艦</td>
+            <td><span class="badge sea">海</span></td>
+            <td>12</td>
+            <td>3</td>
+            <td>無武裝；載 4 陸軍</td>
+          </tr>
+          <tr>
+            <td><img src="images/unit_carrier.png" alt="航空母艦" /></td>
+            <td>航空母艦</td>
+            <td><span class="badge sea">海</span></td>
+            <td>15</td>
+            <td>3</td>
+            <td>載 4 戰機並補油</td>
+          </tr>
+          <tr>
+            <td><img src="images/unit_battleship.png" alt="戰艦" /></td>
+            <td>戰艦</td>
+            <td><span class="badge sea">海</span></td>
+            <td>20</td>
+            <td>2</td>
+            <td>高生命；可岸轟</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="victory">
+      <h2>勝利條件</h2>
+      <p>
+        <strong>佔領對方所有城市</strong>即獲勝。防守己方城市、用運輸艦兩棲登陸、以及用戰機偵察戰霧中的敵城，是常見途徑。
+      </p>
+      <div class="callout">
+        目前為<strong>人類 vs 一台簡易 AI</strong>（擴張、生產陸軍／運輸、攻擊鄰近目標）。往後可再加強 AI 與多人模式。
+      </div>
+    </section>
+
+    <section id="copyright">
+      <h2>版權聲明</h2>
+      <ul>
+        <li>本遊戲名稱、程式、規則實作與<strong>程式化生成美術</strong>皆為原創作品。</li>
+        <li><strong>不是</strong> Civilization II、Strategic Conquest 或其他商業遊戲的複刻、模組或素材重製。</li>
+        <li>未使用上述商業遊戲的標題畫面、關卡、精靈圖、音樂或商標。</li>
+        <li>美術風格僅「靈感參考」1990 年代等距 4X 的視覺習慣（菱形格、有限色盤、抖色），圖檔均由專案內 <code>tools/gen_art.py</code>／<code>tools/gen_banner.py</code> 生成，可重現。</li>
+        <li>請勿將受版權保護的商用精靈圖或音樂混入本專案。</li>
+      </ul>
+      <p style="margin-top:14px;color:var(--muted);font-size:0.92rem;">
+        海報 Banner 檔案：<span class="path">assets/promo/banner_16x9.png</span>（1920×1080）<br />
+        本說明：<span class="path">docs/guide.html</span>（可雙擊或用瀏覽器以 file:// 開啟）
+      </p>
+    </section>
+
+    <footer>
+      世界征服 World Conquest · 原創等距 4X · 本頁可離線開啟
+    </footer>
+  </div>
+</body>
+</html>
